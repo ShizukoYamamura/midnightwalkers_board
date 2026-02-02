@@ -1,0 +1,174 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>The Midnight Walkers パーティ募集掲示板</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+    <script async src="https://pagead2.googlesyndication.com/pagead/js/adsbygoogle.js?client=ca-pub-9908835148006630"
+        crossorigin="anonymous"></script>
+    <style>
+        /* --- ダークホラーテーマ設定 --- */
+        :root {
+            --accent-color: #d32f2f; /* 鮮烈な赤（血や警告のイメージ） */
+            --accent-hover: #b71c1c;
+            --bg-color: #0a0a0a;      /* ほぼ漆黒 */
+            --card-bg: #1e1e1e;
+            --text-main: #f5f5f5;
+            --text-muted: #888;
+            --border-color: #333;
+        }
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background-color: var(--bg-color);
+            color: var(--text-main);
+            margin: 0;
+            line-height: 1.6;
+        }
+        /* Tailwindの上書き */
+        .bg-gray-900 { background-color: var(--bg-color); }
+        .bg-gray-800 { background-color: var(--card-bg); border-color: var(--border-color); }
+        .bg-gray-700 { background-color: #252525; border-color: var(--border-color); }
+        .text-blue-500 { color: var(--accent-color); }
+        .text-blue-600 { color: var(--accent-color); }
+        .text-blue-200 { color: #ffcdd2; } /* 薄い赤 */
+        .bg-blue-600 { background-color: var(--accent-color); }
+        .bg-blue-700:hover { background-color: var(--accent-hover); }
+        .border-gray-600 { border-color: var(--border-color); }
+        .border-gray-700 { border-color: var(--border-color); }
+        .focus\:border-blue-500:focus { border-color: var(--accent-color); }
+    </style>
+</head>
+<body class="min-h-screen p-4">
+
+    <div class="max-w-3xl mx-auto">
+        <header class="mb-8 text-center">
+            <h1 class="text-3xl font-bold mb-2">The Midnight Walkers パーティ募集</h1>
+            <p class="text-gray-400">The Midnight Walkersのパーティ募集・固定探し掲示板</p>
+        </header>
+
+        <div class="bg-gray-800 p-6 rounded-lg shadow-lg mb-8 border">
+            <h2 class="text-xl font-bold mb-4 border-b pb-2">募集を書き込む</h2>
+            <form id="postForm" class="space-y-4">
+                
+                <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <div>
+                        <label class="block text-sm mb-1">プレイヤー名</label>
+                        <input type="text" id="playerName" required class="w-full p-2 rounded bg-gray-700 border focus:outline-none">
+                    </div>
+
+                    <div>
+                        <label class="block text-sm mb-1">使用クラス</label>
+                        <input type="text" id="playerRole" required class="w-full p-2 rounded bg-gray-700 border focus:outline-none">
+                    </div>
+                </div>
+
+                <div>
+                    <label class="block text-sm mb-1">ゲームモード</label>
+                    <input type="text" id="contentName" placeholder="例: ルーキー、サバイバルなど" required class="w-full p-2 rounded bg-gray-700 border focus:outline-none">
+                </div>
+
+                <div>
+                    <label class="block text-sm mb-1">コメント</label>
+                    <textarea id="comment" rows="2" class="w-full p-2 rounded bg-gray-700 border focus:outline-none"></textarea>
+                </div>
+
+                <button type="submit" class="w-full text-white font-bold py-2 px-4 rounded transition">
+                    書き込む
+                </button>
+            </form>
+        </div>
+
+        <div class="bg-gray-800 p-6 rounded-lg shadow-lg border">
+            <h2 class="text-xl font-bold mb-4 border-b pb-2">最新の募集</h2>
+            <div id="boardList" class="space-y-4">
+                <p class="text-center text-gray-500">読み込み中...</p>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // ▼▼▼ ここを自分のSupabaseのキーに書き換えてください ▼▼▼
+        const supabaseUrl = 'https://clulpygnsqwdwrlydtif.supabase.co'; // 例: 'https://xyz.supabase.co'
+        const supabaseKey = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImNsdWxweWduc3F3ZHdybHlkdGlmIiwicm9sZSI6ImFub24iLCJpYXQiOjE3Njk5NDU2MDQsImV4cCI6MjA4NTUyMTYwNH0.33NFYJQyKMaqEN5-ZphzTOE1IbW4MQQ1b1j6YzYjxHg'; // 例: 'eyJhbGciOiJIUzI1NiIsIn...'
+        // ▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲
+
+        // Supabaseクライアントの作成
+        const db = supabase.createClient(supabaseUrl, supabaseKey);
+
+        // ページ読み込み時にデータを取得
+        window.onload = fetchPosts;
+
+        // 1. データを取得して表示する関数
+        async function fetchPosts() {
+            const listContainer = document.getElementById('boardList');
+            
+            // Supabaseからデータを取得（作成日時が新しい順）
+            const { data, error } = await db
+                .from('midnight_board')
+                .select('*')
+                .order('created_at', { ascending: false });
+
+            if (error) {
+                console.error('Error:', error);
+                listContainer.innerHTML = '<p class="text-red-500">データの読み込みに失敗しました。</p>';
+                return;
+            }
+
+            // HTMLを作って表示
+            if (data.length === 0) {
+                listContainer.innerHTML = '<p class="text-gray-500 text-center">まだ募集はありません。</p>';
+                return;
+            }
+
+            let html = '';
+            data.forEach(post => {
+                // 日時のフォーマット
+                const date = new Date(post.created_at).toLocaleString('ja-JP');
+
+                html += `
+                    <div class="bg-gray-700 p-4 rounded border">
+                        <div class="flex justify-between items-start mb-2">
+                            <div>
+                                <span class="font-bold text-white ml-2">[${post.role}]</span>
+                                <span class="font-bold text-white ml-2">${post.player_name}</span>
+                            </div>
+                            <span class="text-xs text-gray-400">${date}</span>
+                        </div>
+                        <div class="bg-gray-900/50 p-2 rounded mb-2">
+                            <span class="text-xs text-gray-400 block">目的</span>
+                            <span class="font-semibold text-blue-200">${post.content}</span>
+                        </div>
+                        <p class="text-gray-300 text-sm whitespace-pre-wrap">${post.comment || 'コメントなし'}</p>
+                    </div>
+                `;
+            });
+            listContainer.innerHTML = html;
+        }
+
+        // 2. データを送信する関数
+        document.getElementById('postForm').addEventListener('submit', async (e) => {
+            e.preventDefault(); // 画面リロードを防ぐ
+
+            const name = document.getElementById('playerName').value;
+            const role = document.getElementById('playerRole').value;
+            const content = document.getElementById('contentName').value;
+            const comment = document.getElementById('comment').value;
+
+            // Supabaseに保存
+            const { error } = await db
+                .from('midnight_board')
+                .insert([{ player_name: name, role: role, content: content, comment: comment }]);
+
+            if (error) {
+                alert('エラーが発生しました: ' + error.message);
+            } else {
+                alert('書き込みました！');
+                document.getElementById('postForm').reset(); // フォームを空にする
+                fetchPosts(); // リストを再読み込み
+            }
+        });
+    </script>
+</body>
+</html>
